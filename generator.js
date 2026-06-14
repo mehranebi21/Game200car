@@ -11,15 +11,17 @@ let metadataCollection = [];
 for (let i = 1; i <= TOTAL_GAMES; i++) {
     const gameId = `game_${String(i).padStart(3, '0')}`;
     const gameName = `Turbo Rush ${themes[i % themes.length]} ${carTypes[i % carTypes.length]}`;
-    const packageName = `com.noblegames.turborush.v${i}`; // پکیج‌نام کاملاً اختصاصی برای باز شدن قفل پنل
+    const packageName = `com.noblegames.turborush.v${i}`; // پکیج‌نام کاملاً اختصاصی
     
     metadataCollection.push({
         gameId,
         name: gameName,
         packageName: packageName,
-        description: `High performance 3D racing game featuring ${themes[i % themes.length]} environment and ${carTypes[i % carTypes.length]} physics. Smooth vector aesthetics.`
+        theme: themes[i % themes.length],
+        carColor: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+        skyColor: `#${Math.floor(Math.random()*16777215).toString(16)}`
     });
 }
 
 fs.writeFileSync('dist/games_metadata.json', JSON.stringify(metadataCollection, null, 2));
-console.log(`Generated metadata for ${TOTAL_GAMES} apps.`);
+console.log(`Metadata for ${TOTAL_GAMES} Android build configurations created.`);
