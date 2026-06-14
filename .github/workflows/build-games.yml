@@ -1,4 +1,4 @@
-name: Generate and Deploy 200 Heavy Graphics Games
+name: Build 200 Real Android APKs and Deploy to Aptoide
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build-android-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,48 +18,86 @@ jobs:
       with:
         node-version: 18
 
-    - name: Install Base Dependencies
-      run: |
-        npm init -y
-        npm install axios
+    - name: Setup Java JDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: '11'
 
-    - name: Generate 200 Unique Games
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+
+    - name: Install Cordova & Dependencies
+      run: |
+        npm install -g cordova
+        npm init -y
+        npm install axios form-data
+
+    - name: Generate Build Configurations
       run: node generator.js
 
-    - name: Register Apps to Catappult Panel
+    - name: Compile APKs and Upload directly to Aptoide
       env:
         MY_APTOIDE_TOKEN: ${{ secrets.CATA_CLIENT_ID }}
       run: |
         node -e "
         const axios = require('axios');
         const fs = require('fs');
+        const { execSync } = require('child_process');
+        const FormData = require('form-data');
+        const path = require('path');
 
-        async function deploy() {
+        async function startPipeline() {
           const token = process.env.MY_APTOIDE_TOKEN;
-          const metadata = JSON.parse(fs.readFileSync('dist/games_metadata.json', 'utf8'));
+          const games = JSON.parse(fs.readFileSync('dist/games_metadata.json', 'utf8'));
 
-          console.log('Registering slots on Catappult...');
+          console.log('Starting Android APK generation engine...');
 
-          for (const game of metadata) {
+          for (const game of games) {
+            console.log('Step 1: Compiling APK for ' + game.name);
+            
             try {
-              // درخواست استاندارد ثبت پکیج‌نام جدید در پنل توسعه‌دهنده
-              const response = await axios.post('https://api.catappult.io/v1/applications', {
-                packageName: game.packageName,
-                title: game.name,
-                description: game.description,
-                category: 'GAME_RACING'
-              }, { 
-                headers: { 
-                  'Authorization': 'Bearer ' + token,
-                  'Content-Type': 'application/json'
-                } 
-              });
-              console.log('Success: Registered ' + game.packageName);
+              // ایجاد یک پروژه اندروید واقعی با کردوا
+              execSync('cordova create ' + game.gameId + ' ' + game.packageName + ' \"' + game.name + '\"');
+              
+              // تزریق کدهای بازی شما به پوشه اندروید
+              const wwwDir = path.join(game.gameId, 'www');
+              if (!fs.existsSync(wwwDir)) fs.mkdirSync(wwwDir);
+              
+              // کپی قالب‌ها
+              let html = fs.readFileSync('template/index.html', 'utf8').replace('{{GAME_NAME}}', game.name);
+              let js = 'const CONFIG = ' + JSON.stringify(game) + ';\n' + fs.readFileSync('template/game.js', 'utf8');
+              
+              fs.writeFileSync(path.join(wwwDir, 'index.html'), html);
+              fs.writeFileSync(path.join(wwwDir, 'game.js'), js);
+              fs.copyFileSync('template/style.css', path.join(wwwDir, 'style.css'));
+
+              // ساخت فایل APK
+              execSync('cd ' + game.gameId + ' && cordova platform add android && cordova build android --release');
+              
+              const apkPath = path.join(game.gameId, 'platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk');
+              
+              if (fs.existsSync(apkPath)) {
+                console.log('Step 2: Uploading real APK to Aptoide...');
+                const form = new FormData();
+                form.append('packageName', game.packageName);
+                form.append('title', game.name);
+                form.append('description', '3D high performance racing game with dynamic visual assets.');
+                form.append('category', 'GAME_RACING');
+                form.append('file', fs.createReadStream(apkPath));
+
+                await axios.post('https://api.catappult.io/v1/applications', form, {
+                  headers: {
+                    ...form.getHeaders(),
+                    'Authorization': 'Bearer ' + token
+                  }
+                });
+                console.log('Successfully fully deployed to store: ' + game.name);
+              }
             } catch (err) {
-              // اگر پکیج از قبل وجود داشت یا پیام خاصی آمد، نمایش داده شود
-              console.log('Status for ' + game.packageName + ': ' + (err.response ? JSON.stringify(err.response.data) : err.message));
+              console.log('Skipping ' + game.name + ' due to: ' + err.message);
             }
           }
         }
-        deploy();
+        startPipeline();
         "
