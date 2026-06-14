@@ -20,50 +20,44 @@ jobs:
 
     - name: Install Base Dependencies
       run: |
-        sudo apt-get install zip -y
         npm init -y
-        npm install axios form-data
+        npm install axios
 
     - name: Generate 200 Unique Games
       run: node generator.js
 
-    - name: Direct Upload File and Metadata to Aptoide
+    - name: Register Apps to Catappult Panel
       env:
         MY_APTOIDE_TOKEN: ${{ secrets.CATA_CLIENT_ID }}
       run: |
         node -e "
         const axios = require('axios');
         const fs = require('fs');
-        const FormData = require('form-data');
 
         async function deploy() {
           const token = process.env.MY_APTOIDE_TOKEN;
           const metadata = JSON.parse(fs.readFileSync('dist/games_metadata.json', 'utf8'));
 
-          for (const game of metadata) {
-            console.log('Deploying file and registering: ' + game.name);
-            
-            try {
-              // ایجاد فرم داده برای ارسال همزمان متاداتا و فایل فیزیکی بازی
-              const form = new FormData();
-              form.append('packageName', game.packageName);
-              form.append('title', game.name);
-              form.append('description', 'High performance 3D racing game with unique environment.');
-              form.append('category', 'GAME_RACING');
-              
-              if (fs.existsSync(game.zipPath)) {
-                form.append('file', fs.createReadStream(game.zipPath));
-              }
+          console.log('Registering slots on Catappult...');
 
-              await axios.post('https://api.catappult.io/v1/applications', form, { 
+          for (const game of metadata) {
+            try {
+              // درخواست استاندارد ثبت پکیج‌نام جدید در پنل توسعه‌دهنده
+              const response = await axios.post('https://api.catappult.io/v1/applications', {
+                packageName: game.packageName,
+                title: game.name,
+                description: game.description,
+                category: 'GAME_RACING'
+              }, { 
                 headers: { 
-                  ...form.getHeaders(),
-                  'Authorization': 'Bearer ' + token
+                  'Authorization': 'Bearer ' + token,
+                  'Content-Type': 'application/json'
                 } 
               });
-              console.log('Successfully fully deployed: ' + game.packageName);
+              console.log('Success: Registered ' + game.packageName);
             } catch (err) {
-              console.log('Skip or Error on: ' + game.packageName + ' -> ' + err.message);
+              // اگر پکیج از قبل وجود داشت یا پیام خاصی آمد، نمایش داده شود
+              console.log('Status for ' + game.packageName + ': ' + (err.response ? JSON.stringify(err.response.data) : err.message));
             }
           }
         }
